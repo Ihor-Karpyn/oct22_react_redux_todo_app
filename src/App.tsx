@@ -1,4 +1,4 @@
-import { useSelector } from 'react-redux';
+import './App.scss';
 
 export const App = () => {
   return (
