@@ -1,82 +1,112 @@
 import {
-  combineReducers,
-  createStore,
-  Action as BaseAction,
-  applyMiddleware, Dispatch,
+  Action, applyMiddleware, combineReducers, createStore, Dispatch,
 } from 'redux';
 import { composeWithDevTools } from 'redux-devtools-extension';
+import { TypedUseSelectorHook, useSelector } from 'react-redux';
 import thunk from 'redux-thunk';
 import { Todo } from '../typedefs';
 import { TodosApi } from '../api/todos/todosApi';
 
-interface Action<T, P> extends BaseAction<T> {
-  payload: P,
+interface PayloadAction<T, P> extends Action<T> {
+  payload: P
 }
 
-export enum TodosActionType {
-  SetTodos = 'todos/set_todos',
-  AddTodo = 'todos/add_todo',
+enum ActionType {
+  SetTodos = 'todo/set_todos',
+  ClearTodos = 'todo/clear_todos',
 }
 
-export type SetTodosAction = Action<TodosActionType.SetTodos, Todo[]>;
-export type AddTodoAction = Action<TodosActionType.AddTodo, Todo>;
+type SetTodosAction = PayloadAction<ActionType.SetTodos, Todo[]>;
+type ClearTodosAction = Action<ActionType.ClearTodos>;
 
-type TodosActions = SetTodosAction | AddTodoAction;
+type AppAction = SetTodosAction | ClearTodosAction;
 
-const setTodosActionCreator = (todos: Todo[]): SetTodosAction => ({
-  type: TodosActionType.SetTodos,
-  payload: todos,
-});
+interface User { id: number }
 
-const loadTodosByUserIdAction = (userId: number) => {
-  return async (dispatch: Dispatch<TodosActions>) => {
-    const todos = await TodosApi.getByUserId(userId);
+interface TodoState {
+  todos: Todo[],
+  users: User[]
+}
 
-    dispatch(setTodosActionCreator(todos));
-  };
+const initialTodoState: TodoState = {
+  todos: [],
+  users: [],
 };
 
-export const TODO_ACTIONS_CREATOR = {
-  set: setTodosActionCreator,
-  load: loadTodosByUserIdAction,
-};
-
-const todosReducer = (
-  todosState: Todo[] = [],
-  action: TodosActions,
-): Todo[] => {
+const todoReducer = (
+  state = initialTodoState, action: AppAction,
+): TodoState => {
   switch (action.type) {
-    case TodosActionType.SetTodos:
-      return [...action.payload];
+    case ActionType.SetTodos:
+      return {
+        ...state,
+        todos: action.payload,
+      };
 
-    case TodosActionType.AddTodo:
-      return [...todosState, action.payload];
+    case ActionType.ClearTodos:
+      return {
+        ...state,
+        todos: [],
+      };
 
     default:
-      return todosState;
+      return state;
   }
 };
 
-const rootReducer = combineReducers({
-  todos: todosReducer,
+const setTodoActionCreator = (todos: Todo[]): SetTodosAction => ({
+  type: ActionType.SetTodos,
+  payload: todos,
 });
 
-export type RootState = ReturnType<typeof rootReducer>;
+const clearTodoActionCreator = (): ClearTodosAction => ({
+  type: ActionType.ClearTodos,
+});
 
-export const store = createStore(
-  rootReducer,
-  composeWithDevTools(applyMiddleware(thunk)),
-);
-
-const todosSelector = (state: RootState): Todo[] => state.todos;
-
-const todosBySearchQuery = (query: string) => {
-  return (state: RootState) => {
-    return state.todos.filter((t) => t.title.toLowerCase().includes(query.toLowerCase()));
-  };
+export const TODO_ACTIONS = {
+  set: setTodoActionCreator,
+  clear: clearTodoActionCreator,
 };
 
-export const TODOS_SELECTORS = {
-  todos: todosSelector,
-  todosBySearchQuery,
+const rootReducer = combineReducers({
+  todo: todoReducer,
+});
+
+export const store = createStore(
+  rootReducer, composeWithDevTools(applyMiddleware(thunk)),
+);
+
+type AppState = ReturnType<typeof rootReducer>;
+
+export const useAppSelector: TypedUseSelectorHook<AppState> = useSelector;
+
+export const todosSelector = (state: AppState) => state.todo.todos;
+
+export const todosByQuerySelector = ((searchQuery: string) => {
+  return (state: AppState) => (
+    state.todo.todos.filter(todo => todo.title.includes(searchQuery))
+  );
+});
+
+export const todoByIdSelector = ((id: number) => {
+  return (state: AppState) => (
+    state.todo.todos.find(todo => todo.id === id)
+  );
+});
+
+export const fullTodoSelector = (state: AppState) => {
+  const { todos, users } = state.todo;
+
+  return todos.map(todo => ({
+    ...todo,
+    user: users.find(user => user.id === todo.userId),
+  }));
+};
+
+export const loadTodosByUserIdAction = (userId: number) => {
+  return async (dispatch: Dispatch<AppAction>) => {
+    const todos = await TodosApi.getByUserId(userId);
+
+    dispatch(TODO_ACTIONS.set(todos));
+  };
 };
